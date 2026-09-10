@@ -1,0 +1,45 @@
+name: Daily NFL Prop Predictions
+
+on:
+  schedule:
+    # 13:00 UTC = 9am ET (8am ET during EST). Adjust to taste.
+    - cron: '0 13 * * *'
+  workflow_dispatch: {}   # lets you click "Run workflow" manually in the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  update-predictions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch latest NFL data
+        working-directory: scripts
+        run: python fetch_data.py
+
+      - name: Build projections
+        working-directory: scripts
+        run: python build_predictions.py
+
+      - name: Generate site
+        working-directory: scripts
+        run: python generate_site.py
+
+      - name: Commit and push updates
+        run: |
+          git config user.name "nfl-prop-bot"
+          git config user.email "actions@github.com"
+          git add data docs
+          git diff --quiet --cached || git commit -m "Daily prediction refresh: $(date -u +'%Y-%m-%d')"
+          git push
