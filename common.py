@@ -3,8 +3,8 @@ import datetime as dt
 import json
 import os
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-DOCS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs")
 
 POSITIONS = ["QB", "RB", "WR", "TE"]
 
