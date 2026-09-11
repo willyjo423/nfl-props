@@ -16,12 +16,14 @@ POSITION_STATS = {
         "passing_tds": "Passing TDs",
         "interceptions": "Interceptions",
         "rushing_yards": "Rushing Yards",
+        "rushing_tds": "Rushing TDs",
     },
     "RB": {
         "rushing_yards": "Rushing Yards",
         "rushing_tds": "Rushing TDs",
         "receptions": "Receptions",
         "receiving_yards": "Receiving Yards",
+        "receiving_tds": "Receiving TDs",
     },
     "WR": {
         "receptions": "Receptions",
@@ -36,6 +38,64 @@ POSITION_STATS = {
         "targets": "Targets",
     },
 }
+
+# Public DFS scoring rules (offense). Sources: DraftKings and FanDuel both
+# publish these on their own sites; nothing paywalled here. "standard" and
+# "ppr"/"half_ppr" are the common non-site-specific fantasy formats.
+# Format: pass_yd, pass_td, interception, rush_yd, rush_td, rec, rec_yd, rec_td, then optional bonus thresholds.
+FANTASY_SCORING = {
+    "draftkings": {
+        "pass_yd": 0.04, "pass_td": 4, "interception": -1,
+        "rush_yd": 0.1, "rush_td": 6,
+        "reception": 1, "rec_yd": 0.1, "rec_td": 6,
+        "pass_yd_bonus": (300, 3), "rush_yd_bonus": (100, 3), "rec_yd_bonus": (100, 3),
+    },
+    "fanduel": {
+        "pass_yd": 0.04, "pass_td": 4, "interception": -1,
+        "rush_yd": 0.1, "rush_td": 6,
+        "reception": 0.5, "rec_yd": 0.1, "rec_td": 6,
+    },
+    "standard": {
+        "pass_yd": 0.04, "pass_td": 4, "interception": -1,
+        "rush_yd": 0.1, "rush_td": 6,
+        "reception": 0, "rec_yd": 0.1, "rec_td": 6,
+    },
+    "ppr": {
+        "pass_yd": 0.04, "pass_td": 4, "interception": -1,
+        "rush_yd": 0.1, "rush_td": 6,
+        "reception": 1, "rec_yd": 0.1, "rec_td": 6,
+    },
+}
+
+
+def compute_fantasy_points(proj_by_col: dict) -> dict:
+    """proj_by_col: raw nflverse column name -> projected value (0 if absent).
+    Returns {"draftkings": x, "fanduel": x, "standard": x, "ppr": x}, each
+    rounded to 1 decimal.
+    """
+    def g(col):
+        v = proj_by_col.get(col)
+        return float(v) if v is not None else 0.0
+
+    pass_yd, pass_td, ints = g("passing_yards"), g("passing_tds"), g("interceptions")
+    rush_yd, rush_td = g("rushing_yards"), g("rushing_tds")
+    rec, rec_yd, rec_td = g("receptions"), g("receiving_yards"), g("receiving_tds")
+
+    out = {}
+    for site, r in FANTASY_SCORING.items():
+        pts = (
+            pass_yd * r["pass_yd"] + pass_td * r["pass_td"] + ints * r["interception"]
+            + rush_yd * r["rush_yd"] + rush_td * r["rush_td"]
+            + rec * r["reception"] + rec_yd * r["rec_yd"] + rec_td * r["rec_td"]
+        )
+        if "pass_yd_bonus" in r and pass_yd >= r["pass_yd_bonus"][0]:
+            pts += r["pass_yd_bonus"][1]
+        if "rush_yd_bonus" in r and rush_yd >= r["rush_yd_bonus"][0]:
+            pts += r["rush_yd_bonus"][1]
+        if "rec_yd_bonus" in r and rec_yd >= r["rec_yd_bonus"][0]:
+            pts += r["rec_yd_bonus"][1]
+        out[site] = round(pts, 1)
+    return out
 
 
 def current_season(today: dt.date = None) -> int:

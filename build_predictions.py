@@ -21,6 +21,7 @@ import pandas as pd
 from common import (
     POSITION_STATS,
     POSITIONS,
+    compute_fantasy_points,
     current_season,
     data_path,
     ensure_dirs,
@@ -28,6 +29,7 @@ from common import (
     utcnow_iso,
     write_json,
 )
+import os
 
 RECENCY_WEIGHTS = [0.40, 0.28, 0.20, 0.12]  # most recent game first
 LOOKBACK_GAMES = len(RECENCY_WEIGHTS)
@@ -147,6 +149,35 @@ def build_defense_factors(weekly: pd.DataFrame, schedule: pd.DataFrame) -> pd.Da
     return pd.DataFrame(factor_rows)
 
 
+def load_injury_lookup(season: int, target_week: int) -> dict:
+    """gsis player_id -> latest known report status ('Questionable',
+    'Doubtful', 'Out', etc.) for the target week, if injury data was
+    fetched successfully. Returns {} if unavailable -- this is a bonus
+    signal, never a hard dependency.
+    """
+    path = data_path("injuries.parquet")
+    if not os.path.exists(path):
+        return {}
+    try:
+        inj = pd.read_parquet(path)
+    except Exception:  # noqa: BLE001
+        return {}
+
+    id_col = "gsis_id" if "gsis_id" in inj.columns else ("player_id" if "player_id" in inj.columns else None)
+    status_col = "report_status" if "report_status" in inj.columns else None
+    if id_col is None or status_col is None or "week" not in inj.columns or "season" not in inj.columns:
+        return {}
+
+    # most recent report at or before the target week for this season
+    sub = inj[(inj["season"] == season) & (inj["week"] <= target_week)]
+    if sub.empty:
+        return {}
+    sub = sub.sort_values("week", ascending=False)
+    sub = sub.dropna(subset=[status_col])
+    sub = sub.drop_duplicates(subset=[id_col], keep="first")
+    return dict(zip(sub[id_col], sub[status_col]))
+
+
 def find_target_week(schedule: pd.DataFrame, season: int):
     """Pick the next week in `season` that hasn't been fully played yet."""
     season_games = schedule[schedule["season"] == season].copy()
@@ -212,6 +243,8 @@ def main():
     playing_teams = set(team_opponent.keys())
     baselines = baselines[baselines["team"].isin(playing_teams)].copy()
 
+    injury_lookup = load_injury_lookup(season, target_week)
+
     predictions = []
     for position in POSITIONS:
         pos_players = baselines[baselines["position"] == position].copy()
@@ -238,6 +271,7 @@ def main():
             def_row = pos_defense.loc[opponent] if opponent in pos_defense.index else None
 
             stat_predictions = {}
+            proj_by_col = {}
             for stat_col, label in POSITION_STATS[position].items():
                 baseline = player.get(f"avg_{stat_col}")
                 if baseline is None or pd.isna(baseline):
@@ -253,6 +287,7 @@ def main():
                     "recent_avg": round(float(baseline), 1),
                     "matchup_multiplier": round(float(mult), 2),
                 }
+                proj_by_col[stat_col] = projection
 
             if not stat_predictions:
                 continue
@@ -265,6 +300,8 @@ def main():
                     "opponent": opponent,
                     "games_sampled": int(player["games_sampled"]),
                     "stats": stat_predictions,
+                    "fantasy_points": compute_fantasy_points(proj_by_col),
+                    "injury_status": injury_lookup.get(player.get("player_id")),
                 }
             )
 
