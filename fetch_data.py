@@ -58,9 +58,9 @@ def fetch_weekly_safely(years):
     used_years = []
     remaining_years = list(years)
 
-    # Strategy 1: one file per season
+    # Strategy 1: one file per season, named like "player_stats_2025.parquet"
     for year in list(remaining_years):
-        asset = find_asset(assets, ["week", str(year)])
+        asset = find_asset(assets, [f"player_stats_{year}"])
         if asset is None:
             continue
         try:
@@ -72,11 +72,11 @@ def fetch_weekly_safely(years):
         except Exception as exc:  # noqa: BLE001
             print(f"  -> season {year}: found {asset['name']} but failed to read it ({exc})")
 
-    # Strategy 2: a single combined file covering everything, if per-season
-    # files weren't found (or weren't found for the remaining years) --
-    # filter it down to the years we still need.
+    # Strategy 2: the single combined file (all seasons, weekly grain) that
+    # nflverse also publishes as plain "player_stats.parquet" -- used if a
+    # per-season file wasn't found for one of the requested years.
     if remaining_years:
-        combined = find_asset(assets, ["week"]) or find_asset(assets, ["player", "stats"])
+        combined = next((a for a in assets if a["name"].lower() == "player_stats.parquet"), None)
         if combined is not None:
             try:
                 frame = pd.read_parquet(combined["browser_download_url"])
